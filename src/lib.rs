@@ -36,10 +36,8 @@ pub trait GlobalVar<T> {
 }
 
 impl<T> GlobalVar<T> for Lazy<RwLock<T>> {
-    #[inline(always)]
     fn set(&self, data: T) {
-        let mut var = self.write();
-        *var = data;
+        *self.write() = data;
     }
     
     fn get(&self) -> T 

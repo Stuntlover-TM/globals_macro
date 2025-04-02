@@ -1,21 +1,47 @@
 # globals_macro
 
-A simple, zero-boilerplate solution for thread-safe global variables in Rust.
+A simple, zero-boilerplate solution for **thread-safe global variables** in Rust, powered by `parking_lot` and `once_cell`.
 
 ## Features
 
-- **Effortless globals** - Define with a clean macro syntax
-- **Thread-safe** - Built on `parking_lot`'s fast RwLock
-- **Lazy initialization** - Uses `once_cell` for optimal performance
-- **Ergonomic API** - Simple `.get()`, `.set()`, and `.update()` operations
+- **Effortless declaration** - Clean macro syntax for defining globals
+- **Thread-safe by design** - Uses `parking_lot`'s optimized `RwLock`
+- **Lazy initialization** - Values created on first access via `once_cell`
+- **Flexible access** - Choose between cloning or reference-based access
+- **Writer priority** - Fair lock acquisition prevents writer starvation
 
 ## Installation
 
-Add to your `Cargo.toml`:
 ```toml
 [dependencies]
 globals_macro = { git = "https://github.com/Stuntlover-TM/globals-macro" }
 ```
+
+## Threading Behavior
+
+| Operation  | Concurrent Access Behavior              | Blocks? | Safe? |
+|------------|----------------------------------------|---------|-------|
+| `.get()`   | Multiple readers allowed                | ❌      | ✅    |
+| `.get_with()` | Multiple readers allowed            | ❌      | ✅    |
+| `.set()`   | Exclusive access; blocks all readers/writers | ✅ (waits) | ✅    |
+| `.update()` | Exclusive access; blocks all readers/writers | ✅ (waits) | ✅    |
+
+### Key Threading Rules:
+1. **Reads (`.get()`, `.get_with()`)**  
+   - Can run concurrently with other reads.  
+   - Blocked only during active writes.
+
+2. **Writes (`.set()`, `.update()`)**  
+   - Require exclusive access.  
+   - Block until all existing reads/writes complete.  
+   - New reads/writes wait until the write finishes.
+
+3. **Deadlock Warning**  
+   ```rust
+   global.update(|x| {
+       global.set(42); // ⚠️ Deadlock! (nested write)
+   });
+   ```
 
 ## Basic Usage
 
@@ -32,19 +58,33 @@ globals! {
 }
 
 fn main() {
-    // Set values directly
+    // Set values
     app_name.set("Awesome App".to_string());
-    is_active.set(true);
     
-    // Get cloned values
-    println!("App: {}, Active: {}", app_name.get(), is_active.get());
+    // Thread-safe read (clones)
+    println!("App: {}", app_name.get());
     
     // Atomic update
     user_count.update(|c| *c += 1);  // Thread-safe increment
     
     // Efficient read without clone
-    let name_len = app_name.get_with(|n| n.len());
-    println!("Name length: {}", name_len);
+    let _len = app_name.get_with(|n| n.len());
+}
+```
+
+### Map Example
+```rust
+globals! {
+    config: HashMap<String, String> = {
+        let mut m = HashMap::new();
+        m.insert("timeout".into(), "30s".into());
+        m
+    },
+}
+
+fn request() {
+    let timeout = config.get_with(|c| c.get("timeout").unwrap());
+    // ...
 }
 ```
 
@@ -53,40 +93,15 @@ fn main() {
 ### Macro Syntax
 ```rust
 globals! {
-    var_name: Type = initial_value,  // with initializer
-    var_name: Type,                  // uses Type::default()
-}                                     // (requires Default trait)
-```
-
-### Available Methods
-- `.set(value)` - Updates the global value
-- `.get() -> T` - Gets a cloned value (requires `T: Clone`)
-- `.get_with(|val| ...)` - Operates on the value without cloning
-- `.update(|mut val| ...)` - Atomically modifies the value
-
-## Other example
-
-```rust
-use globals_macro::{globals, GlobalVar};
-
-globals! {
-    // Application configuration
-    config: HashMap<String, String> = {
-        let mut m = HashMap::new();
-        m.insert("version".into(), "1.0".into());
-        // Sets config to m by returning it
-        m
-    },
-    
-    // Request counter
-    request_count: usize,
-}
-
-fn handle_request() {
-    request_count.update(|c| *c += 1);
-    
-    config.get_with(|cfg| {
-        println!("App version: {}", cfg.get("version").unwrap());
-    });
+    var_name: Type = initializer,  // With explicit init
+    var_name: Type,               // Uses Type::default()
 }
 ```
+
+### Methods
+| Method | Description | Clone Required? |
+|--------|-------------|-----------------|
+| `.set(value)` | Replaces the value | ❌ |
+| `.get() -> T` | Returns a cloned value | ✅ |
+| `.get_with(\|val\| ...)` | Reads without clone | ❌ |
+| `.update(\|mut val\| ...)` | Modifies in-place | ❌ |

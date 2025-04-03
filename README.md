@@ -14,7 +14,7 @@ A simple, zero-boilerplate solution for **thread-safe global variables** in Rust
 
 ```toml
 [dependencies]
-globals_macro = { git = "https://github.com/Stuntlover-TM/globals-macro" }
+globals_macro = { git = "https://github.com/Stuntlover-TM/globals_macro" }
 ```
 
 ## Threading Behavior
